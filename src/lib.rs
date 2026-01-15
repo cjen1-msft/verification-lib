@@ -20,6 +20,8 @@ pub use crypto::Certificate;
 pub use certificate_chain::AmdCertificates;
 pub use sev_verification::{SevVerificationDetails, SevVerificationResult, SevVerifier};
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -34,7 +36,7 @@ pub fn init() {
 /// JavaScript-facing verification function
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-pub async fn verify_attestation_report(attestation_report_json: &str) -> Result<String, String> {
+pub async fn verify_attestation_report(attestation_report_json: &str) -> std::result::Result<String, String> {
     let attestation_report: AttestationReport = serde_json::from_str(attestation_report_json)
         .map_err(|e| format!("Failed to parse attestation report: {}", e))?;
 

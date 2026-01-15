@@ -12,9 +12,9 @@ compile_error!("Either `crypto_openssl` or `crypto_pure_rust` feature must be en
 compile_error!(
     "`crypto_openssl` is not supported on wasm32 targets. Use `crypto_pure_rust` instead."
 );
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 use crate::snp::report::AttestationReport;
+use crate::Result;
 
 /// Verifies that data was signed by the implementor's private key.
 pub trait Verifier<T> {
@@ -23,7 +23,7 @@ pub trait Verifier<T> {
 
 /// Crypto backend trait for certificate parsing and chain verification.
 pub trait CryptoBackend {
-    type Certificate: Verifier<Self::Certificate> + Verifier<AttestationReport>;
+    type Certificate: Verifier<Self::Certificate> + Verifier<AttestationReport> + CertificateExt;
 
     /// Parse a certificate from PEM-encoded data.
     fn from_pem(pem: &[u8]) -> Result<Self::Certificate>;
@@ -40,6 +40,13 @@ pub trait CryptoBackend {
         untrusted_chain: Vec<Self::Certificate>,
         leaf: Self::Certificate,
     ) -> Result<()>;
+}
+
+/// Extension trait for accessing X.509 certificate extensions by OID.
+pub trait CertificateExt {
+    /// Get the raw value of an extension by its OID string (e.g., "1.3.6.1.4.1.3704.1.3.1").
+    /// Returns `None` if the extension is not present.
+    fn get_extension_by_oid(&self, oid: &str) -> Result<Vec<u8>>;
 }
 
 #[cfg(feature = "crypto_openssl")]

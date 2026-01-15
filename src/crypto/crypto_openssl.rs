@@ -4,7 +4,7 @@ use openssl::ecdsa::EcdsaSig;
 use openssl::stack::Stack;
 use openssl::x509::verify::X509VerifyFlags;
 
-use super::{CryptoBackend, Result, Verifier};
+use super::{CertificateExt, CryptoBackend, Result, Verifier};
 use crate::snp::report::{AttestationReport, Signature};
 
 pub struct Crypto;
@@ -94,6 +94,55 @@ impl Verifier<AttestationReport> for Certificate {
                 report.signature_algo.get()
             )
             .into()),
+        }
+    }
+}
+
+impl CertificateExt for Certificate {
+    fn get_extension_by_oid(&self, oid: &str) -> Result<Vec<u8>> {
+        use foreign_types_shared::ForeignType;
+        use std::ffi::CString;
+
+        unsafe {
+            // Create ASN1_OBJECT from OID string
+            let oid_cstr =
+                CString::new(oid).map_err(|e| format!("Failed to create CString: {}", e))?;
+            let target_obj = openssl_sys::OBJ_txt2obj(oid_cstr.as_ptr(), 1);
+            if target_obj.is_null() {
+                return Err("Invalid OID string".into());
+            }
+
+            // Find extension by OID
+            let ext_loc = openssl_sys::X509_get_ext_by_OBJ(self.as_ptr(), target_obj, -1);
+            openssl_sys::ASN1_OBJECT_free(target_obj);
+
+            if ext_loc < 0 {
+                return Err(format!("Extension OID {} not found", oid).into());
+            }
+
+            // Get the extension
+            let ext = openssl_sys::X509_get_ext(self.as_ptr(), ext_loc);
+            if ext.is_null() {
+                return Err(format!("OID {} is present but get extension failed", oid).into());
+            }
+
+            // Get extension data (returns ASN1_OCTET_STRING*)
+            let octet_string = openssl_sys::X509_EXTENSION_get_data(ext);
+            if octet_string.is_null() {
+                return Err(format!("OID {} is present but has no data", oid).into());
+            }
+
+            // ASN1_OCTET_STRING is typdef ASN1_STRING
+            // so we can use ASN1_STRING_* functions on it
+            // https://docs.openssl.org/3.0/man3/ASN1_STRING_length/#notes
+            let len = openssl_sys::ASN1_STRING_length(octet_string as *const _);
+            let ptr = openssl_sys::ASN1_STRING_get0_data(octet_string as *const _);
+            if ptr.is_null() || len <= 0 {
+                return Err(format!("OID {} has empty data", oid).into());
+            }
+
+            let slice = std::slice::from_raw_parts(ptr, len as usize);
+            Ok(slice.to_vec())
         }
     }
 }

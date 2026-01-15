@@ -6,8 +6,8 @@ use rsa::{
 use sha2::Sha384;
 use x509_cert::der::{referenced::OwnedToRef, Encode};
 
+use super::{CertificateExt, CryptoBackend, Result, Verifier};
 use crate::snp::report::{AttestationReport, Signature};
-use super::{CryptoBackend, Result, Verifier};
 
 pub struct Crypto;
 
@@ -60,8 +60,8 @@ impl CryptoBackend for Crypto {
 
     fn from_pem(pem: &[u8]) -> Result<Self::Certificate> {
         use x509_cert::der::DecodePem;
-        let pem_str = std::str::from_utf8(pem)
-            .map_err(|e| format!("Invalid UTF-8 in PEM data: {:?}", e))?;
+        let pem_str =
+            std::str::from_utf8(pem).map_err(|e| format!("Invalid UTF-8 in PEM data: {:?}", e))?;
         Certificate::from_pem(pem_str)
             .map_err(|e| format!("Failed to parse PEM certificate: {:?}", e).into())
     }
@@ -143,5 +143,21 @@ impl Verifier<AttestationReport> for Certificate {
             )
             .into()),
         }
+    }
+}
+
+impl CertificateExt for Certificate {
+    fn get_extension_by_oid(&self, oid: &str) -> Result<Vec<u8>> {
+        let extensions = self
+            .tbs_certificate
+            .extensions
+            .as_ref()
+            .ok_or("Certificate has no extensions")?;
+        for ext in extensions.iter() {
+            if ext.extn_id.to_string() == oid {
+                return Ok(ext.extn_value.as_bytes().to_vec());
+            }
+        }
+        Err(format!("Extension with OID {} not found", oid).into())
     }
 }
